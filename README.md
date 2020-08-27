@@ -1,5 +1,5 @@
 # QuantumEvolution.jl
-Implentation of `Quantum PSO` with some modifications
+Implentation of Quantum PSO with some modifications, inspired by `Species-based Quantum Particle Swarm Optimization for economic load-dispatch`
 
 [![Build Status](https://github.com/francescoalemanno/QuantumEvolution.jl/workflows/CI/badge.svg)](https://github.com/francescoalemanno/QuantumEvolution.jl/actions)
 
