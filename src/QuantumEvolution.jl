@@ -9,7 +9,11 @@ struct QEState{vP,vC,vO}
     N::Int
     K::Int
     iter::Int
+    fnevals::Int
+    improv::Int
 end
+
+evals(state::QEState) = state.fnevals
 
 struct QEProblem{tF,tS,T}
     f::tF
@@ -28,48 +32,49 @@ function opt_state(problem::QEProblem, N, K; kw...)
     order = sortperm(C)
     eqP = [P[i] * 1 for i in order[1:K]]
     eqC = [C[i] * 1 for i in order[1:K]]
-    eqP[1], eqC[1], QEState(P[order], C[order], eqP, eqC, N, K, 1), N
+    (eqP[1], eqC[1], QEState(P[order], C[order], eqP, eqC, N, K, 1, N, 1))
 end
 
 function opt_state(problem::QEProblem, S::QEState; rng, verbose, kw...)
-    P, C, eqP, eqC, N, K, iters = S.P, S.C, S.eqP, S.eqC, S.N, S.K, S.iter
+    P, C, eqP, eqC, N, K, iters, fnevals, improv = S.P, S.C, S.eqP, S.eqC, S.N, S.K, S.iter, S.fnevals, S.improv
     cost, beta, max_iters = problem.f, problem.beta, problem.max_iters
     eqPav = sum(x -> x / K, eqP)
     dsol = size(eqPav)
     tr = iters / max_iters
-    t = (1 - tr)^(tr)
-    fnevals = 0
-    ndims = 1.0 * length(eqPav)
-    # this dampening factor F, serves to account for multiple dimensions, 
-    # as ndims increses this factor keeps the probability of sampling near the optimum constant
-    F = log(2) / (2 * ndims) + log(ndims) + log(1 / log(2)) # approx of -log(1-2^(-1/ndims)), error below 3%
+    t = (1 - tr)^(2tr)
+    worst = C[end]
+    best = C[1]
+    
     for i = ceil(Int, (N - K + 1) * (1 - t) + t):N
         @label regen
         eqPr = (K + 1) * rand(rng) < 1 ? eqPav : rand(rng, eqP)
-        u = rand(rng)
+        log_u = log(rand(rng))/log(2)
         v = sign.(rand(rng, dsol...) .- 0.5)
-        nP = @.(eqPr + (beta / F) * abs(P[i] - eqPr) * log(u) * v)
+        nP = @.(eqPr + beta * abs(P[i] - eqPr) * log_u * v)
         nC = cost(nP)
         fnevals += 1
         isfinite(nC) || begin
             verbose && println("Failed function evaluation at $nP")
             @goto regen
         end
-        push!(P, nP)
-        push!(C, nC)
+        if nC <= worst
+            push!(P, nP)
+            push!(C, nC)
+            nC < best ? improv += 1 : nothing
+        end
     end
-    order = sortperm(C)
+    iters += 1
+    #efficiency = (improv/iters)/(fnevals/(N*0.497595+K*(1-0.497595)))
+    #@show efficiency
+    order = sortperm(C)[1:N]
     eqP = [P[i] * 1 for i in order[1:K]]
     eqC = [C[i] * 1 for i in order[1:K]]
-    eqP[1],
-    eqC[1],
-    QEState(P[order[1:N]], C[order[1:N]], eqP, eqC, N, K, iters + 1),
-    fnevals
+    (eqP[1], eqC[1], QEState(P[order], C[order], eqP, eqC, N, K, iters, fnevals, improv))
 end
 
 
 """
-Implentation of `Quantum PSO` with some modifications
+Implementation of `Quantum PSO` with some modifications
 
 ## API
 
@@ -123,17 +128,15 @@ function optimize(
 )
     N < 2K && error("N must be at least $(2K)")
     problem = QEProblem(f, s, beta, max_iters)
-    best, cost, state, evals = opt_state(problem, N, K)
+    best, cost, state= opt_state(problem, N, K)
     callback(state)
-    fnevals = evals
     for i = 1:(max_iters)
-        best, cost, state, evals = opt_state(problem, state; rng, verbose)
-        fnevals += evals
+        best, cost, state= opt_state(problem, state; rng, verbose)
         callback(state)
-        verbose && println(i, " ", cost)
+        verbose && println(i, " ", cost, " ", state.improv," ", state.improv/evals(state))
         cost < min_cost && break
     end
-    (x = best, fx = cost, f_nevals = fnevals)
+    (x = best, fx = cost, f_nevals = evals(state))
 end
 
 export optimize
