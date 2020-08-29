@@ -139,12 +139,12 @@ function optimize(
     N < 2K && error("N must be at least $(2K)")
     problem = QEProblem(f, s, projector, beta, max_iters)
     best, cost, state = opt_state(problem, N, K)
-    callback(state) && @goto ret
+    callback(state) === true && @goto ret
     for i = 1:(max_iters)
         best, cost, state = opt_state(problem, state; rng, verbose)
         verbose &&
             println(i, " ", cost, " ", state.improv, " ", state.improv / evals(state))
-        callback(state) && break
+        callback(state) === true && break
         cost < min_cost && break
     end
     @label ret
