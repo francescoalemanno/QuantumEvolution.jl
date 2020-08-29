@@ -15,15 +15,16 @@ end
 
 evals(state::QEState) = state.fnevals
 
-struct QEProblem{tF,tS,T}
+struct QEProblem{tF,tS,tP,T}
     f::tF
     s::tS
+    projector::tP
     beta::T
     max_iters::Int
 end
 
 function opt_state(problem::QEProblem, N, K; kw...)
-    P = [problem.s(i) for i = 1:N]
+    P = [problem.projector(problem.s(i)) for i = 1:N]
     C = [problem.f(P[i]) for i = 1:N]
     for i in eachindex(P)
         isfinite(C[i]) && continue
@@ -36,21 +37,23 @@ function opt_state(problem::QEProblem, N, K; kw...)
 end
 
 function opt_state(problem::QEProblem, S::QEState; rng, verbose, kw...)
-    P, C, eqP, eqC, N, K, iters, fnevals, improv = S.P, S.C, S.eqP, S.eqC, S.N, S.K, S.iter, S.fnevals, S.improv
-    cost, beta, max_iters = problem.f, problem.beta, problem.max_iters
+    P, C, eqP, eqC, N, K, iters, fnevals, improv =
+        S.P, S.C, S.eqP, S.eqC, S.N, S.K, S.iter, S.fnevals, S.improv
+    cost, beta, max_iters, projector =
+        problem.f, problem.beta, problem.max_iters, problem.projector
     eqPav = sum(x -> x / K, eqP)
     dsol = size(eqPav)
     tr = iters / max_iters
     t = (1 - tr)^(2tr)
     worst = C[end]
     best = C[1]
-    
+
     for i = ceil(Int, (N - K + 1) * (1 - t) + t):N
         @label regen
         eqPr = (K + 1) * rand(rng) < 1 ? eqPav : rand(rng, eqP)
-        log_u = log(rand(rng))/log(2)
+        log_u = log(rand(rng)) / log(2)
         v = sign.(rand(rng, dsol...) .- 0.5)
-        nP = @.(eqPr + beta * abs(P[i] - eqPr) * log_u * v)
+        nP = projector(@.(eqPr + beta * abs(P[i] - eqPr) * log_u * v))
         nC = cost(nP)
         fnevals += 1
         isfinite(nC) || begin
@@ -90,6 +93,7 @@ function optimize(
     verbose = false,
     rng = Random.GLOBAL_RNG,
     callback = state -> nothing,
+    projector = identity
 )
 ```
 
@@ -99,6 +103,11 @@ function optimize(
 - `K` : number of particles used as best individuals to propose new particles.
 - `beta` : dilation/contraction factor for proposal distribution.
 - `max_iters` : maximum number of iterations.
+- `min_cost` : threshold for stopping the algorithm whenever the cost of the current best solution is below `min_cost`
+- `verbose` : enables verbosity
+- `rng` : random number generator
+- `callback` : callback function to access the internal state of the optimizer, if it returns `true` the optimizer is stopped
+- `projector` : function whose role is projecting parameters back into their constrained space
 
 ## Usage example:
 
@@ -110,7 +119,7 @@ optimize(rosenbrock2d, initpoint, 30)
 ```
 
 ```
-(x = [1.0000000000001437, 1.0000000000002875], fx = 2.064394754776154e-26, f_nevals = 1996)
+(x = [0.9999998740708989, 0.9999997219238367], fx = 8.459636979174772e-14, f_nevals = 1661)
 ```
 as expected the global optimum has been found.
 """
@@ -125,17 +134,20 @@ function optimize(
     verbose = false,
     rng = Random.GLOBAL_RNG,
     callback = state -> nothing,
+    projector = identity,
 )
     N < 2K && error("N must be at least $(2K)")
-    problem = QEProblem(f, s, beta, max_iters)
-    best, cost, state= opt_state(problem, N, K)
-    callback(state)
+    problem = QEProblem(f, s, projector, beta, max_iters)
+    best, cost, state = opt_state(problem, N, K)
+    callback(state) && @goto ret
     for i = 1:(max_iters)
-        best, cost, state= opt_state(problem, state; rng, verbose)
-        callback(state)
-        verbose && println(i, " ", cost, " ", state.improv," ", state.improv/evals(state))
+        best, cost, state = opt_state(problem, state; rng, verbose)
+        verbose &&
+            println(i, " ", cost, " ", state.improv, " ", state.improv / evals(state))
+        callback(state) && break
         cost < min_cost && break
     end
+    @label ret
     (x = best, fx = cost, f_nevals = evals(state))
 end
 

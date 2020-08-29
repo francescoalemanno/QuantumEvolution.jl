@@ -1,5 +1,5 @@
 # QuantumEvolution.jl
-Implentation of Quantum PSO with some modifications, inspired by `Species-based Quantum Particle Swarm Optimization for economic load-dispatch`
+Implementation of Quantum PSO with some modifications, inspired by `Species-based Quantum Particle Swarm Optimization for economic load-dispatch`
 
 [![Build Status](https://github.com/francescoalemanno/QuantumEvolution.jl/workflows/CI/badge.svg)](https://github.com/francescoalemanno/QuantumEvolution.jl/actions)
 
@@ -17,6 +17,7 @@ function optimize(
     verbose = false,
     rng = Random.GLOBAL_RNG,
     callback = state -> nothing,
+    projector = identity
 )
 ```
 
@@ -26,6 +27,11 @@ function optimize(
 - `K` : number of particles used as best individuals to propose new particles.
 - `beta` : dilation/contraction factor for proposal distribution.
 - `max_iters` : maximum number of iterations.
+- `min_cost` : threshold for stopping the algorithm whenever the cost of the current best solution is below `min_cost`
+- `verbose` : enables verbosity
+- `rng` : random number generator
+- `callback` : callback function to access the internal state of the optimizer, if it returns `true` the optimizer is stopped
+- `projector` : function whose role is projecting parameters back into their constrained space
 
 ## Usage example:
 
@@ -37,6 +43,6 @@ optimize(rosenbrock2d, initpoint, 30)
 ```
 
 ```
-(x = [1.0000000000001437, 1.0000000000002875], fx = 2.064394754776154e-26, f_nevals = 1996)
+(x = [0.9999998740708989, 0.9999997219238367], fx = 8.459636979174772e-14, f_nevals = 1661)
 ```
 as expected the global optimum has been found.
